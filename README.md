@@ -1,5 +1,7 @@
 # taiga 容器部署
 
+![taiga](https://raw.githubusercontent.com/jussker/taiga-docker/master/images/taiga-login.JPG)
+
 # taiga 组件介绍
 
 ## Taiga-front
