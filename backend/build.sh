@@ -1,5 +1,6 @@
-#! /usr/bin/env bash
+ #!/usr/bin/env bash
 
+image_name=$1
 
 if [[ -d taiga-back ]]; then
     rm -rf taiga-back
@@ -18,4 +19,8 @@ fi
 
 cp taiga-back/requirements.txt .
 
-docker build -t dougg/taiga-back .
+docker build -t ${image_name} .
+
+if [[ -d taiga-back ]]; then
+    rm -rf taiga-back
+fi

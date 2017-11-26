@@ -1,102 +1,138 @@
-[![Stories in Ready](https://badge.waffle.io/ipedrazas/taiga-docker.png?label=ready&title=Ready)](https://waffle.io/ipedrazas/taiga-docker)
-# taiga-docker
+# Taiga-docker 部署步骤
 
-Docker scripts to run your own  [Taiga](https://Taiga.io/).
-
-
-External Dependencies:
-
-   * [PostgreSQL](https://registry.hub.docker.com/_/postgres/)
-
-Taiga
-
-   * [taiga-back](https://github.com/taigaio/taiga-back): Django backend
-   * [taiga-front](https://github.com/taigaio/taiga-front): Angular.js frontend
+准备一个有docker环境的机器，具体安装参见官方[Docker Install](https://docs.docker.com/engine/installation/)  
 
 
-By far the easiest way of setting up Taiga in Docker is by running the `setup.sh` script. So, if you just want to run it and you just don't care about what happens underneath, just run that script.
+## 克隆该项目到本地
 
-There's a catch. The API url has to be specified. Taiga frontend is javascript, so, we have to inject the value of the hostname where taiga-back runs. We can do that by defining an environment variable
+```
+git clone -b master --single-branch https://gitee.com/tableExchange/taste-docker-compose.git ~/taste-docker-compose
+cd ~/taste-docker-compose
+```
 
-        export API_NAME=boot2docker
+## 编译docker镜像
 
-For example, it will make the requests to `http://boot2docker:8000/api/v1/...` If you don't define this variable the script will assume it's `localhost` (if you're using `boot2docker` it will not work).
+```
+cd ~/taste-docker-compose/backend
+./build.sh jussker-dev/taiga-back:dev
+```
+其中将`jussker-dev/taiga-back:dev`换成自己的镜像名称
 
-If you want to run the frontend manually, this is the command:
+```
+cd ~/taste-docker-compose/frontend
+./build.sh jussker-dev/taiga-front:dev
+```
+其中将`jussker-dev/taiga-front:dev`换成自己的镜像名称
 
-        docker run -d --name taiga-front -p 80:80 -e API_NAME=$API_NAME --link taiga-back:taiga-back ipedrazas/taiga-front
+## 将`docker-compose.yml` 中的镜像改为自己的镜像名称,修改修改的地方如下所示：
 
+`docker-compose.yml`
 
-Once you've successfully installed Taiga start a web browser and point it to `http://localhost` or `http://boot2docker`. You should be greeted by a login page. The administrators username is `admin`, and the password is `123123`.
+```
+...
+  taigabackend:
+    image: jussker-dev/taiga-back:dev
+...
+  taigafrontend:
+    image: jussker-dev/taiga-front:dev
+...
+```
 
-If you cannot authenticate, probably is that the API_NAME has not been set properly.
+## 启动服务
 
-There is another script `run.sh` that you can use to start your taiga containers once the installation has been succesful. You don't have to run it after the setup, just after stopping the containers.
+如果环境中已经有容器编排工具，则将docker-compose.yml提交给编排工具进行部署。
 
-### Postgresql
+如果环境中还没有，则可以安装docker-compose,安装步骤参考官方的[Install Docker Compose](https://docs.docker.com/compose/install/#install-compose).这里演示使用docker-compose.
 
-We run a container based on the original image provided by [PostgreSQL](https://registry.hub.docker.com/_/postgres/)
+```
+cd ~/taste-docker-compose
+docker-compose create
+docker-compose start
+```
 
-    docker run -d --name postgres  postgres
+## 进行初始化
+初始化过程需要进入taigabackend容器中
 
-**Note about Volumes**
+```
+docker ps 
+```
+找到`taigabackend`的容器id
 
-If you try to mount volumes in OSX using `boot2docker` you will see that it does not work. This is known problem and it only affects OSX. There's a solution though. You might want to extend the postgres docker image and add this line:
+```
+docker exec -it /bin/bash
+```
 
-`RUN usermod -u 1000 postgres`
+这样我们进入到容器中
 
-This change will fix the permission problem when mounting a volume.
+初始化过程需要两步，初始化数据库和初始化静态文件,如下命令在taigabackend的容器中执行
 
-**To initialise the database**
+```
+#初始化数据库
+sh regenerate.sh
 
-    docker run -it --link postgres:postgres --rm postgres sh -c "su postgres --command 'createuser -h "'$POSTGRES_PORT_5432_TCP_ADDR'" -p "'$POSTGRES_PORT_5432_TCP_PORT'" -d -r -s taiga'"
+#初始化静态文件
+python manage.py collectstatic
+```
 
-    docker run -it --link postgres:postgres --rm postgres sh -c "su postgres --command 'createdb -h "'$POSTGRES_PORT_5432_TCP_ADDR'" -p "'$POSTGRES_PORT_5432_TCP_PORT'" -O taiga taiga'";
+## 查看界面
 
-If you want to access the database, run the following container:
+登陆taiga的地址[http://localhost:8080/](http://localhost:8080/)即可查看。管理员账户`admin`,密码`123123`
 
-    docker run -it --link postgres:postgres --rm postgres sh -c 'exec psql -h "$POSTGRES_PORT_5432_TCP_ADDR" -p "$POSTGRES_PORT_5432_TCP_PORT" -U postgres'
+Django的管理界面[http://localhost:8080/admin/](http://localhost:8080/)可以查看数据库元数据。管理员账户`admin`,密码`123123`
 
-Once you are in psql you can check that indeed our user & database have been created:
+## 特殊情况
+如果需要将taiga的服务部署在不同的机器或者网段中，则需要注意将如下环境变量配置称为实际的地址
 
-    # To list the users defined in our system use the following command
-    \du
-    # To list the databases, the command is
-    \list
+- `"MEDIA_URL=http://taiga-front:port/media/"` 
+- `"STATIC_URL=http://taiga-front:port/static/"` 
 
+将后端存储用户文件的uri或url 配置成实际提供文件服务的地址。如果有必要，也是要修改前端nginx代理。
 
-### Taiga-Back
+需要了解的是，Taiga中文件或资源地址是由后端生成好后，发送给前端服务的，地址就是由`MEDIA_URL`和`STATIC_URL`决定其前缀。
+如`MEDIA_URL=/media/`,则实际的地址为`http://taiga-backend:8001/media/`
+如`MEDIA_URL=http//192.168.1.101:8001/media/`，则实际地址还是`http//192.168.1.101:8001/media/`
 
-Before running our backend, we have to populate our database, to do so, Taiga provides a regenerate script that creates all the tables and even some testing data
+## docker-compose中环境变量说明
 
-    # pull the image
-    docker pull ipedrazas/taiga-back
+**Postgres的配置**
 
-    # regenerate tables
-    docker run -it --rm --link postgres:postgres ipedrazas/taiga-back bash regenerate.sh
+- `"POSTGRES_HOST=postgresdb"` 数据地址
+- `"POSTGRES_DB=taiga"` 数据库名
+- `"POSTGRES_USER=taiga"` 数据库登陆用户名
+- `"POSTGRES_PASSWORD=taiga"` 数据库登陆密码
 
-Once the database has been populated, we can start our Django application:
+**Taiga-backend的配置**
 
-    docker run -d -p 8000:8000 --name taiga-back --link postgres:postgres ipedrazas/taiga-back
+- `"API_BASE_PROTOCOL=http"` 后端api使用的协议类型
+- `"API_BASE_DOMAIN=taigabackend"` 后端api对外的域名或者ip
+- `"API_BASE_PORT=8000"` 后端api的端口
+- `"FRONT_BASE_PROTOCOL=http"` 前端服务的协议类型
+- `"FRONT_BASE_DOMAIN=taigafrontend"` 前端服务的域名或者ip
+- `"FRONT_BASE_PORT=80"` 前端服务的端口
+- `"MEDIA_URL=/media/"` 后端存储用户文件的uri或url
+- `"STATIC_URL=/static/"` 后端网页静态资源的uri或url
+- `"EMAIL_HOST=smtp.domain.com"` 后端邮件功能所使用的服务地址
+- `"EMAIL_PORT=25"` 后端邮件功能所使用的服务端口
+- `"EMAIL_HOST_USER=yourmail@domain.com"` 邮箱账号
+- `"EMAIL_HOST_PASSWORD=yourpassword"` 邮箱密码
+- `"DEFAULT_FROM_EMAIL=yourmail@domain.com"` 默认的发件人
+- `"EMAIL_SUBJECT_PREFIX=taiga-noreplay"` 邮件主题前缀
+- `"EMAIL_USE_TLS=False"` ssl功能是否开启，因为多数邮箱服务的ssl功能开启复杂，这里只做测试，所以这里选择了False。
 
+**Taiga-frontend的配置**
 
-### Taiga-Front
+- `"BASE_DOMAIN=taigabackend:8000"` 后端api的地址
+- `"BASE_PROTOCOL=http"` 后端api使用的协议类型
 
+## 其他配置文件
+这些变量均是从taiga的配置文件中得到的，这里为了方便部署所以单独领出来。更多配置可以参考源代码中的如下配置文件
+**taiga-backend**
+- `taiga-back/settings/common.py` 系统默认配置
+- `taiga-back/settings/local.py` 用户自定义配置，如果修改默认配置，在这里重新定义即可
 
-Finally, we run the frontend
+**taiga-frontend**
+- `taiga-front/conf/conf.json` 如果修改默认配置，在这里重新定义即可，记得备份。
 
-        # pull the image
-        docker pull ipedrazas/taiga-front
+**其他**
+taiga-docker的前端是部署在nginx上的，可以通过配置nginx的配置来改变前端的规则。
 
-        # run the frontend
-        docker run -d -p 80:80 --link taiga-back:taiga-back --volumes-from taiga-back ipedrazas/taiga-front
-
-
-The frontend needs to know the URL of the backend. Those settings are specified in the `frontend/conf.json` file. You can modify them and re-add them into the image by using a volume
-
-        docker run -d -p 80:80 --link taiga-back:taiga-back -v "$(pwd)"/frontend/conf.json:/taiga/js/conf.json:ro ipedrazas/taiga-front
-
-
-## What's next?
-
-The docker compose file needs some love and care but the next is to add RabbitMQ and the Taiga events plugged in.

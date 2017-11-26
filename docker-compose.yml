@@ -1,21 +1,51 @@
-postgres:
+version: '2'
+volumes:
+  taigaback:
+    driver: local
+services:
+  postgresdb:
     image: postgres
     environment:
-        - "POSTGRES_USER=taiga"
-        - "POSTGRES_DB=taiga"
-
-taigaback:
-    image: dougg/taiga-back
+      - "POSTGRES_PASSWORD=taiga"
+      - "POSTGRES_USER=taiga"
+      - "POSTGRES_DB=taiga"
+  taigabackend:
+    image: jussker-dev/taiga-back:dev
     links:
-        - postgres:postgres
+      - postgresdb:postgresdb
+    environment:
+      - "POSTGRES_PASSWORD=taiga"
+      - "POSTGRES_HOST=postgresdb"
+      - "POSTGRES_USER=taiga"
+      - "POSTGRES_DB=taiga"
+      - "API_BASE_PROTOCOL=http"
+      - "API_BASE_DOMAIN=localhost"
+      - "API_BASE_PORT=8000"
+      - "FRONT_BASE_PROTOCOL=http"
+      - "FRONT_BASE_DOMAIN=localhost"
+      - "FRONT_BASE_PORT=8080"
+      - "MEDIA_URL=http://localhost:8080/media/"
+      - "STATIC_URL=http://localhost:8080/static/"
+      - "EMAIL_HOST=smtp.domain.com"
+      - "EMAIL_PORT=25"
+      - "EMAIL_HOST_USER=yourmail@domain.com"
+      - "EMAIL_HOST_PASSWORD=yourpassword"
+      - "DEFAULT_FROM_EMAIL=yourmail@domain.com"
+      - "EMAIL_SUBJECT_PREFIX=taiga-noreplay"
+      - "EMAIL_USE_TLS=False"
+    volumes:
+      - taigaback:/var/taiga/
     ports:
-        - "8000:8000"
-
-taigafront:
-    image: dougg/taiga-front
+      - "8000:8000"
+  taigafrontend:
+    image: jussker-dev/taiga-front:dev
     links:
-        - taigaback:taiga-back
+      - taigabackend:taigabackend
+    environment:
+      - "BASE_DOMAIN=localhost:8000"
+      - "BASE_PROTOCOL=http"
+    volumes:
+      - taigaback:/var/taiga/
     ports:
         - "8080:80"
-    environment:
-        - "BASE_URL=http://localhost:8000"
+
